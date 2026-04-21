@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Статус пользователей</title>
+    <style>
+        /* Базовые стили для отображения статуса, чтобы элементы выглядели нормально */
+        body { font-family: sans-serif; padding: 20px; }
+        .user-item { display: flex; align-items: center; margin-bottom: 12px; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 10px; }
+        #myInfo { margin-bottom: 20px; font-weight: bold; color: #333; }
+    </style>
+</head>
+<body>
+
+    <div id="myInfo">Загрузка...</div>
+    <div id="grouplist"></div>
+
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+        // ВНИМАНИЕ: Замените URL на ссылку вашего проекта (вида https://xxxxxx.supabase.co)
+        const URL = 'https://ВАШ_ПРОЕКТ.supabase.co'; 
+        
+        // Используем ТОЛЬКО sb_publishable (публичный ключ)
+        const KEY = 'sb_publishable_1QFd7P35_JdzaMJLps-n7w_TPWQ0sDI'; 
+        
+        const supabase = createClient(URL, KEY);
+
+        // Ваш ID
+        const MY_ID = '7369e3de-81b6-45a7-b296-49400b544b23';
+
+        // Функция для изменения своего статуса и цвета
+        window.changeStatus = async (text, color) => {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ status: text, color: color })
+                .eq('id', MY_ID);
+
+            if (error) {
+                alert("Ошибка! Проверьте RLS политики в Supabase.");
+                console.error(error);
+            } else {
+                fetchGroup();
+            }
+        };
+
+        // Функция для загрузки и отображения группы
+        async function fetchGroup() {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .order('username', { ascending: true });
+
+            if (error) return console.error(error);
+
+            const list = document.getElementById('grouplist');
+            list.innerHTML = data.map(user => `
+                <div class="user-item">
+                    <div class="status-dot" style="background: ${user.color || "#ccc"}"></div>
+                    <div style="flex-grow: 1;">
+                        <strong>${user.username}</strong><br>
+                        <small style="color: #666;">${user.status || 'Статус не задан'}</small>
+                    </div>
+                </div>
+            `).join('');
+
+            // Находим текущего пользователя по MY_ID
+            const me = data.find(u => u.id === MY_ID);
+            if (me) {
+                document.getElementById('myInfo').innerText = `Вы зашли как: ${me.username}`;
+            }
+        }
+
+        // Первичная загрузка и установка интервала обновления (каждые 5 секунд)
+        fetchGroup();
+        setInterval(fetchGroup, 5000);
+    </script>
+</body>
+</html>
