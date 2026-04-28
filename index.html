@@ -20,10 +20,36 @@
         .btn-save:hover { background: #0056b3; }
         .btn-google { width: 100%; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; }
         .user-item { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f3f5; }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 15px; }
-        .username { font-weight: 600; flex-grow: 1; }
-        .status-tag { font-size: 0.75rem; color: #6c757d; background: #f8f9fa; padding: 4px 10px; border-radius: 10px; border: 1px solid #eee; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 15px; flex-shrink: 0; }
+        .username { font-weight: 600; flex-grow: 1; display: flex; align-items: center; gap: 8px; }
+        .status-tag { font-size: 0.75rem; color: #6c757d; background: #f8f9fa; padding: 4px 10px; border-radius: 10px; border: 1px solid #eee; white-space: nowrap; }
         #logoutBtn { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 12px; text-decoration: underline; padding: 0; margin-top: 10px; }
+        
+        /* Новые стили для таймера и индикатора онлайна */
+        .online-pulse {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #28a745;
+            border-radius: 50%;
+            box-shadow: 0 0 0 rgba(40, 167, 69, 0.4);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+        }
+        .timer-badge {
+            font-family: 'Segoe UI', monospace;
+            background: #eef2f5;
+            color: #495057;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            margin-right: 10px;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -57,7 +83,6 @@
 
             if (user) {
                 currentUser = user;
-                // Автоматически добавляем/обновляем пользователя в таблице profiles
                 await supabase.from('profiles').upsert({
                     id: user.id,
                     username: user.user_metadata.full_name || user.email
@@ -75,7 +100,7 @@
                     provider: 'google',
                     options: { redirectTo: window.location.href }
                 });
-                fetchGroup(); // Список группы видим всем
+                fetchGroup(); 
             }
         }
 
@@ -116,26 +141,57 @@
             if (!currentUser) return alert("Сначала войдите!");
             if (!tempStatus.text) return alert("Выберите статус!");
 
+            // Готовим данные для обновления
+            const payload = { 
+                status: tempStatus.text, 
+                color: tempStatus.color 
+            };
+
+            // Если выбрали "Онлайн", начинаем отсчет. Иначе - сбрасываем.
+            if (tempStatus.text === '🟢 Онлайн') {
+                payload.study_start_time = new Date().toISOString();
+            } else {
+                payload.study_start_time = null; 
+            }
+
             const { error } = await supabase
                 .from('profiles')
-                .update({ status: tempStatus.text, color: tempStatus.color })
+                .update(payload)
                 .eq('id', currentUser.id);
 
-            if (error) alert("Ошибка обновления!");
-            else { fetchGroup(); alert("Статус обновлен!"); }
+            if (error) {
+                console.error(error);
+                alert("Ошибка! Убедитесь, что вы добавили колонку study_start_time в таблицу profiles.");
+            } else { 
+                fetchGroup(); 
+                alert("Статус обновлен!"); 
+            }
         };
 
         async function fetchGroup() {
             const { data, error } = await supabase.from('profiles').select('*').order('username', { ascending: true });
             if (error) return;
 
-            document.getElementById('groupList').innerHTML = data.map(user => `
-                <div class="user-item">
-                    <div class="status-dot" style="background: ${user.color || '#ccc'}"></div>
-                    <div class="username">${user.username}</div>
-                    <div class="status-tag">${user.status || 'Нет статуса'}</div>
-                </div>
-            `).join('');
+            document.getElementById('groupList').innerHTML = data.map(user => {
+                const isOnline = user.status === '🟢 Онлайн';
+                
+                // Рендерим пульсирующую точку, если онлайн
+                const pulseHtml = isOnline ? `<span class="online-pulse" title="Сейчас в учебе"></span>` : '';
+                
+                // Рендерим блок таймера, куда скрипт будет каждую секунду записывать время
+                const timerHtml = (isOnline && user.study_start_time) 
+                    ? `<div class="timer-badge" data-start="${user.study_start_time}">...</div>` 
+                    : '';
+
+                return `
+                    <div class="user-item">
+                        <div class="status-dot" style="background: ${user.color || '#ccc'}"></div>
+                        <div class="username">${user.username} ${pulseHtml}</div>
+                        ${timerHtml}
+                        <div class="status-tag">${user.status || 'Нет статуса'}</div>
+                    </div>
+                `;
+            }).join('');
 
             if (currentUser) {
                 const me = data.find(u => u.id === currentUser.id);
@@ -145,7 +201,37 @@
             }
         }
 
+        // Логика обновления таймеров на экране каждую секунду
+        setInterval(() => {
+            document.querySelectorAll('.timer-badge').forEach(el => {
+                const startStr = el.getAttribute('data-start');
+                if (!startStr) return;
+                
+                const startTime = new Date(startStr).getTime();
+                const now = new Date().getTime();
+                const diff = now - startTime;
+
+                if (diff >= 0) {
+                    let totalSeconds = Math.floor(diff / 1000);
+                    let hours = Math.floor(totalSeconds / 3600);
+                    totalSeconds %= 3600;
+                    let minutes = Math.floor(totalSeconds / 60);
+                    let seconds = totalSeconds % 60;
+
+                    if (hours === 0 && minutes === 0) {
+                        el.innerText = `${seconds} сек.`;
+                    } else {
+                        let timeText = '';
+                        if (hours > 0) timeText += `${hours}ч. `;
+                        timeText += `${minutes}м. ${seconds}с.`;
+                        el.innerText = timeText;
+                    }
+                }
+            });
+        }, 1000);
+
         checkUser();
+        // Обновляем список группы каждые 5 секунд
         setInterval(fetchGroup, 5000);
     </script>
 </body>
