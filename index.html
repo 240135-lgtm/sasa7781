@@ -245,6 +245,10 @@
                         <div class="stat-value" id="statAchievs" style="color:var(--accent-purple);">0</div>
                         <div class="stat-label">Достиж.</div>
                     </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statRespect" style="color:var(--accent-yellow);">0</div>
+                        <div class="stat-label">Респекты</div>
+                    </div>
                 </div>
 
                 <div class="status-grid">
@@ -460,8 +464,26 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="list-right">
+                        <div class="list-right" style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
                             <div class="list-time">${timeHtml}</div>
+
+                            ${
+                                currentUser && currentUser.id !== user.id
+                                ? `
+                                <button
+                                    class="btn btn-dark"
+                                    style="padding:6px 10px; font-size:0.75rem;"
+                                    onclick="giveRespect('${user.id}')"
+                                >
+                                    🔥 Респект (${user.respect_count || 0})
+                                </button>
+                                `
+                                : `
+                                <div style="font-size:0.8rem; color:var(--accent-yellow);">
+                                    🔥 ${user.respect_count || 0}
+                                </div>
+                                `
+                            }
                         </div>
                     </div>
                 `;
@@ -523,101 +545,143 @@
                     document.getElementById('statMsgs').innerText = me.message_count || 0;
                     const myAchievs = me.achievements || [];
                     document.getElementById('statAchievs').innerText = myAchievs.length;
+                    document.getElementById('statRespect').innerText = me.respect_count || 0;
 
-                    // Бэйджи под ником
-                    document.getElementById('profileBadges').innerHTML = myAchievs.map(achId => {
-                        const ach = DB_ACHIEVEMENTS.find(a => a.id === achId);
-                        return ach ? `<span class="badge-tag">${ach.icon} ${ach.title}</span>` : '';
+                    // Отрендерить сетку достижений и бейджи
+                    document.getElementById('achievCount').innerText = `${myAchievs.length}/${DB_ACHIEVEMENTS.length}`;
+                    document.getElementById('achievementsGrid').innerHTML = DB_ACHIEVEMENTS.map(ach => {
+                        const isUnlocked = myAchievs.includes(ach.id);
+                        return `
+                            <div class="ach-card ${isUnlocked ? '' : 'locked'}">
+                                <div class="ach-icon">${ach.icon}</div>
+                                <div class="ach-title">${ach.title}</div>
+                                <div class="ach-desc">${ach.desc}</div>
+                                <div class="ach-rarity rarity-${ach.rarity}">${ach.rarityText}</div>
+                                ${isUnlocked ? '' : '<div class="locked-icon">🔒</div>'}
+                            </div>
+                        `;
                     }).join('');
 
-                    renderAchievementsTab(myAchievs);
-                    
-                    // Проверка достижения "Пьедестал" (Топ-3)
-                    const myRank = topUsers.findIndex(u => u.id === currentUser.id);
-                    if (myRank >= 0 && myRank < 3 && !myAchievs.includes('pedestal')) {
-                        let upd = [...myAchievs, 'pedestal'];
-                        supabase.from('profiles').update({achievements: upd}).eq('id', currentUser.id).then(()=>fetchGroup());
-                    }
+                    document.getElementById('profileBadges').innerHTML = myAchievs.map(id => {
+                        const ach = DB_ACHIEVEMENTS.find(a => a.id === id);
+                        return ach ? `<span class="badge-tag">${ach.icon} ${ach.title}</span>` : '';
+                    }).join('');
                 }
             }
         }
 
-        function renderAchievementsTab(userAchievs) {
-            document.getElementById('achievCount').innerText = `${userAchievs.length}/${DB_ACHIEVEMENTS.length}`;
-            
-            document.getElementById('achievementsGrid').innerHTML = DB_ACHIEVEMENTS.map(ach => {
-                const isUnlocked = userAchievs.includes(ach.id);
-                const lockHtml = isUnlocked ? '' : '<div class="locked-icon">🔒</div>';
-                const cardClass = isUnlocked ? 'ach-card' : 'ach-card locked';
-                
-                return `
-                    <div class="${cardClass}">
-                        ${lockHtml}
-                        <div class="ach-icon">${ach.icon}</div>
-                        <div class="ach-title">${ach.title}</div>
-                        <div class="ach-desc">${ach.desc}</div>
-                        <div class="ach-rarity rarity-${ach.rarity}">${ach.rarityText}</div>
-                    </div>
-                `;
-            }).join('');
-        }
+        // --- РЕСПЕКТЫ ---
+        window.giveRespect = async (targetUserId) => {
+            if (!currentUser) return;
+
+            if (targetUserId === currentUser.id) return;
+
+            const { data: profile, error } = await supabase
+                .from('profiles')
+                .select('respect_count')
+                .eq('id', targetUserId)
+                .single();
+
+            if (error || !profile) return;
+
+            const newCount = (profile.respect_count || 0) + 1;
+
+            await supabase
+                .from('profiles')
+                .update({
+                    respect_count: newCount
+                })
+                .eq('id', targetUserId);
+        };
 
         // --- ЧАТ ---
         async function loadMessages() {
-            const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(50);
-            if (error) return;
-            
+            const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(100);
+            if (error) return console.error(error);
+
             const chatBox = document.getElementById('chatBox');
+            if(data.length === 0) {
+                chatBox.innerHTML = `<div style="color: var(--text-muted); text-align: center; margin-top: 20px;">Сообщений пока нет...</div>`;
+                return;
+            }
+
             chatBox.innerHTML = data.map(msg => `
                 <div class="chat-msg">
-                    <div class="msg-author">${msg.username}</div>
+                    <div class="msg-author">${msg.username || 'Аноним'}</div>
                     <div>${msg.text}</div>
                 </div>
             `).join('');
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        document.getElementById('sendMessageBtn').onclick = async () => {
-            if (!currentUser) return;
+        async function sendMessage() {
             const input = document.getElementById('chatInput');
             const text = input.value.trim();
-            if (!text) return;
+            if (!text || !currentUser || !myProfileData) return;
 
             input.value = '';
-            await supabase.from('messages').insert({ user_id: currentUser.id, username: currentUser.user_metadata.full_name, text: text });
-
-            if (myProfileData) {
-                let mCount = (myProfileData.message_count || 0) + 1;
-                let ach = myProfileData.achievements || [];
-                if (mCount >= 20 && !ach.includes('activist')) ach.push('activist');
-                if (mCount >= 50 && !ach.includes('party_soul')) ach.push('party_soul');
-                await supabase.from('profiles').update({ message_count: mCount, achievements: ach }).eq('id', currentUser.id);
-            }
-        };
-
-        document.getElementById('chatInput').addEventListener('keydown', e => { if(e.key === 'Enter') document.getElementById('sendMessageBtn').click(); });
-
-        supabase.channel('public-messages').on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => loadMessages()).subscribe();
-
-        // --- ТАЙМЕРЫ И ИНТЕРВАЛЫ ---
-        setInterval(() => {
-            const now = new Date().getTime();
+            await supabase.from('messages').insert({ user_id: currentUser.id, username: myProfileData.username, text: text });
             
-            // Таймеры участников
-            document.querySelectorAll('.timer-badge').forEach(el => {
-                const startStr = el.getAttribute('data-start');
-                if (!startStr) return;
-                el.innerHTML = formatTimeCustom(now - new Date(startStr).getTime(), true);
-            });
+            const newMsgCount = (myProfileData.message_count || 0) + 1;
+            let currentAchievs = myProfileData.achievements || [];
+            if (newMsgCount >= 20 && !currentAchievs.includes('activist')) currentAchievs.push('activist');
+            if (newMsgCount >= 50 && !currentAchievs.includes('party_soul')) currentAchievs.push('party_soul');
 
-            // Главный таймер (мой)
-            if (myStartTime && document.getElementById('mainTimerText')) {
-                document.getElementById('mainTimerText').innerHTML = formatTimeCustom(now - new Date(myStartTime).getTime());
+            await supabase.from('profiles').update({ message_count: newMsgCount, achievements: currentAchievs }).eq('id', currentUser.id);
+        }
+
+        document.getElementById('sendMessageBtn').onclick = sendMessage;
+        document.getElementById('chatInput').onkeydown = (e) => { if (e.key === 'Enter') sendMessage(); };
+
+        // --- РЕАЛТАЙМ ОБНОВЛЕНИЯ (REALTIME) ---
+        supabase
+        .channel('public-messages')
+        .on(
+            'postgres_changes',
+            {
+                event: '*',
+                schema: 'public',
+                table: 'messages'
+            },
+            () => {
+                loadMessages();
             }
+        )
+        .subscribe();
+
+        supabase
+        .channel('profiles-realtime')
+        .on(
+            'postgres_changes',
+            {
+                event: '*',
+                schema: 'public',
+                table: 'profiles'
+            },
+            () => {
+                fetchGroup();
+            }
+        )
+        .subscribe();
+
+        // Клиентский таймер для живого обновления секунд
+        setInterval(() => {
+            if (currentUser && myStartTime) {
+                const diffMs = new Date().getTime() - new Date(myStartTime).getTime();
+                document.getElementById('mainTimerText').innerHTML = formatTimeCustom(diffMs);
+            }
+
+            document.querySelectorAll('.timer-badge').forEach(el => {
+                const start = el.getAttribute('data-start');
+                if(start) {
+                    const diffMs = new Date().getTime() - new Date(start).getTime();
+                    el.innerText = formatTimeCustom(diffMs, true);
+                }
+            });
         }, 1000);
 
+        // Старт проверки пользователя
         checkUser();
-        setInterval(fetchGroup, 5000);
     </script>
 </body>
 </html>
