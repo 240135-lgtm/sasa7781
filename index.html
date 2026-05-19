@@ -29,6 +29,25 @@
             --rarity-legendary: #d29922;
         }
 
+        /* Светлая тема */
+        body.light-theme {
+            --bg-main: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f7f8fa;
+            --text-main: #0b0d14;
+            --text-muted: #57606a;
+            --border-color: #d0d7de;
+            --accent-green: #1a7f37;
+            --accent-red: #cf222e;
+            --accent-blue: #0969da;
+            --accent-yellow: #9a6700;
+            --accent-purple: #8250df;
+            --rarity-common: #1a7f37;
+            --rarity-rare: #0969da;
+            --rarity-epic: #8250df;
+            --rarity-legendary: #9a6700;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
 
         body {
@@ -210,6 +229,7 @@
                     <button class="btn btn-green" id="btnStart" onclick="setDetailedStatus('🟢 В сети', 'dot-green', true)">▶ Продолжить</button>
                     <button class="btn btn-red" id="btnEnd" onclick="setDetailedStatus('🔴 Занят', 'dot-red', false)" style="display:none;">■ Завершить</button>
                     <button class="btn btn-dark" id="btnLogout">Выход</button>
+                    <button class="btn btn-dark" id="btnThemeToggle" style="flex:0 0 45px; padding:12px;" title="Сменить тему">🌓</button>
                 </div>
             </div>
 
@@ -524,6 +544,11 @@
                     myProfileData = me;
                     const isOnline = me.status && me.status.includes('В сети');
                     
+                    // Применяем тему из профиля
+                    const theme = me.theme || 'dark';
+                    document.body.className = theme === 'light' ? 'light-theme' : '';
+                    document.getElementById('btnThemeToggle').innerText = theme === 'light' ? '☀️' : '🌙';
+                    
                     // Кнопки
                     document.getElementById('btnStart').style.display = isOnline ? 'none' : 'flex';
                     document.getElementById('btnEnd').style.display = isOnline ? 'flex' : 'none';
@@ -592,6 +617,16 @@
                     respect_count: newCount
                 })
                 .eq('id', targetUserId);
+        };
+
+        // --- СМЕНА ТЕМЫ ---
+        document.getElementById('btnThemeToggle').onclick = async () => {
+            if (!currentUser || !myProfileData) return;
+            const newTheme = (myProfileData.theme === 'light') ? 'dark' : 'light';
+            await supabase.from('profiles').update({ theme: newTheme }).eq('id', currentUser.id);
+            myProfileData.theme = newTheme;
+            document.body.className = newTheme === 'light' ? 'light-theme' : '';
+            document.getElementById('btnThemeToggle').innerText = newTheme === 'light' ? '☀️' : '🌙';
         };
 
         // --- ЧАТ ---
